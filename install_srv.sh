@@ -69,8 +69,12 @@ fi
 sudo mkdir -p "$APP_DIR" "$DATA_DIR"
 sudo cp kidtimeSrv.py requirements-srv.txt "$APP_DIR/"
 sudo "${VENV_CMD[@]}" "$APP_DIR/.venv"
-sudo "$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
-sudo "$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements-srv.txt"
+PIP_ENV=()
+if [[ -n "${PIP_INDEX_URL:-}" ]]; then
+  PIP_ENV+=("PIP_INDEX_URL=$PIP_INDEX_URL")
+fi
+sudo env "${PIP_ENV[@]}" "$APP_DIR/.venv/bin/python" -m pip install --upgrade pip
+sudo env "${PIP_ENV[@]}" "$APP_DIR/.venv/bin/python" -m pip install -r "$APP_DIR/requirements-srv.txt"
 
 sudo tee /etc/kidtime.env >/dev/null <<EOF
 KIDTIME_SHARED_KEY_HEX=$KIDTIME_SHARED_KEY_HEX
