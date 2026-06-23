@@ -25,7 +25,10 @@ SSH tunnel.
 - `kidtimeCli.py`: Windows 11 client.
 - `kidtimeSrv.py`: Alibaba Cloud Linux 3 upload server.
 - `install_cli.ps1`: Windows client installer.
-- `install_srv.sh`: Alibaba Cloud Linux / RHEL-like systemd installer.
+- `install_srv.sh`: Linux server installer dispatcher.
+- `install_srv_rpm.sh`: Alibaba Cloud Linux / RHEL-like systemd installer.
+- `install_srv_deb.sh`: Debian / Ubuntu systemd installer.
+- `install_srv_ubuntu.sh`: Ubuntu alias that calls `install_srv_deb.sh`.
 - `requirements-cli.txt`: client dependencies.
 - `requirements-srv.txt`: server dependencies.
 
@@ -53,16 +56,19 @@ The target server can be Alibaba Cloud Linux 3 / OpenAnolis Edition:
 cat /etc/os-release
 ```
 
-The installer uses `dnf` or `yum`, creates a Python virtual environment, and
+The RPM installer uses `dnf` or `yum`, creates a Python virtual environment, and
 requires Python 3.8 or newer. Copy this project to the server, then run:
 
 ```bash
 export KIDTIME_SHARED_KEY_HEX="replace_with_64_hex_chars"
 export KIDTIME_PORT=8001
 export KIDTIME_DATA_DIR=/var/lib/kidtime
-chmod +x install_srv.sh
-./install_srv.sh
+chmod +x install_srv.sh install_srv_rpm.sh
+./install_srv_rpm.sh
 ```
+
+`install_srv.sh` can also auto-detect the distribution and call the right
+installer.
 
 The installer creates:
 
@@ -103,8 +109,22 @@ from the monitored Windows machines. If `pip install` is slow or blocked, use a
 PyPI mirror while running the installer:
 
 ```bash
-PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ ./install_srv.sh
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ ./install_srv_rpm.sh
 ```
+
+## Install the server on Debian or Ubuntu
+
+For Debian or Ubuntu hosts, use the apt-based installer:
+
+```bash
+export KIDTIME_SHARED_KEY_HEX="replace_with_64_hex_chars"
+export KIDTIME_PORT=8001
+export KIDTIME_DATA_DIR=/var/lib/kidtime
+chmod +x install_srv.sh install_srv_deb.sh install_srv_ubuntu.sh
+./install_srv_deb.sh
+```
+
+`install_srv_ubuntu.sh` is an alias for the same Debian-family installer.
 
 ## Install the client on Windows 11
 
