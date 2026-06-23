@@ -138,20 +138,24 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
   -SharedKeyHex "replace_with_64_hex_chars"
 ```
 
-The installer copies files to `C:\ProgramData\KidTime`, installs dependencies,
-sets machine-level environment variables, and creates two Scheduled Tasks:
+The installer copies files to `C:\ProgramData\KidTime`, grants standard users
+write access to the client log directory, installs dependencies, sets
+machine-level environment variables, and creates two Scheduled Tasks for the
+built-in `Users` group:
 
-- `KidTimeMonitor`: starts the client on user logon with `pythonw.exe`.
-- `KidTimeMonitorWatchdog`: runs every five minutes and starts the client if it
-  is not already running.
+- `KidTimeMonitor`: starts the client when any standard user logs on, using
+  `pythonw.exe`.
+- `KidTimeMonitorWatchdog`: starts on any standard user logon and checks every
+  five minutes that the client is still running.
 
-The main task starts on user logon, because foreground-window collection needs an
-interactive desktop session. The watchdog task runs every five minutes and
-restarts the client if it is missing. This is more reliable than a simple
-registry `Run` item because Windows Task Scheduler is designed for managed
-background jobs and is less likely to be removed by ordinary startup-app cleanup
-tools. It is still not impossible for an administrator or endpoint-management
-policy to disable it, so operations should monitor missing uploads on the server.
+The tasks start on user logon rather than machine startup because
+foreground-window collection needs the logged-in user's interactive desktop
+session. A startup task running as `SYSTEM` would run before that desktop exists
+and can report `Unknown` or the wrong session. Registering the tasks for the
+`Users` group lets one administrator install cover whichever standard account
+logs in later. It is still not impossible for an administrator or
+endpoint-management policy to disable scheduled tasks, so operations should
+monitor missing uploads on the server.
 
 Client outputs:
 
@@ -165,6 +169,7 @@ Useful client commands:
 python C:\ProgramData\KidTime\kidtimeCli.py --ensure-running
 python C:\ProgramData\KidTime\kidtimeCli.py --uninstall-startup
 Get-ScheduledTask -TaskName KidTimeMonitor, KidTimeMonitorWatchdog
+(Get-ScheduledTask -TaskName KidTimeMonitor).Principal
 Get-Content C:\ProgramData\KidTime\kidtimeCli.log -Tail 100 -Wait
 ```
 

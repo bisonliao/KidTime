@@ -240,40 +240,126 @@ def find_pythonw() -> str:
     return str(exe)
 
 
+def powershell_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def install_startup(script_path: Path, base_dir: Path) -> None:
     pythonw = find_pythonw()
-    command = [
-        "schtasks",
-        "/Create",
-        "/TN",
-        TASK_NAME,
-        "/TR",
-        f'"{pythonw}" "{script_path}" --base-dir "{base_dir}"',
-        "/SC",
-        "ONLOGON",
-        "/RL",
-        "LIMITED",
-        "/F",
-    ]
-    subprocess.run(command, check=True)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["icacls", str(base_dir), "/grant", "*S-1-5-32-545:(OI)(CI)M", "/T"],
+        check=False,
+    )
+    ps_script = "\n".join(
+        [
+            "$ErrorActionPreference = 'Stop'",
+            f"$Pythonw = {powershell_single_quote(pythonw)}",
+            f"$ScriptPath = {powershell_single_quote(str(script_path))}",
+            f"$BaseDir = {powershell_single_quote(str(base_dir))}",
+            f"$MonitorTaskName = {powershell_single_quote(TASK_NAME)}",
+            f"$WatchdogTaskName = {powershell_single_quote(TASK_NAME + 'Watchdog')}",
+        ]
+    ) + r'''
+function Escape-Xml([string]$Value) {
+    return [Security.SecurityElement]::Escape($Value)
+}
 
-    watchdog_command = [
-        "schtasks",
-        "/Create",
-        "/TN",
-        f"{TASK_NAME}Watchdog",
-        "/TR",
-        f'"{pythonw}" "{script_path}" --ensure-running --base-dir "{base_dir}"',
-        "/SC",
-        "MINUTE",
-        "/MO",
-        "5",
-        "/RL",
-        "LIMITED",
-        "/F",
-    ]
-    subprocess.run(watchdog_command, check=True)
-    print(f"Installed scheduled tasks: {TASK_NAME}, {TASK_NAME}Watchdog")
+function New-KidTimeTaskXml(
+    [string]$Description,
+    [string]$Command,
+    [string]$Arguments,
+    [bool]$Repeat
+) {
+    $repetitionXml = ""
+    if ($Repeat) {
+        $repetitionXml = @"
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <Duration>P3650D</Duration>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+"@
+    }
+
+    $escapedDescription = Escape-Xml $Description
+    $escapedCommand = Escape-Xml $Command
+    $escapedArguments = Escape-Xml $Arguments
+
+    return @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>$escapedDescription</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+$repetitionXml
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Users">
+      <GroupId>S-1-5-32-545</GroupId>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Users">
+    <Exec>
+      <Command>$escapedCommand</Command>
+      <Arguments>$escapedArguments</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+}
+
+Unregister-ScheduledTask -TaskName $MonitorTaskName -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $WatchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+$MonitorArgs = '"' + $ScriptPath + '" --base-dir "' + $BaseDir + '"'
+$WatchdogArgs = '"' + $ScriptPath + '" --ensure-running --base-dir "' + $BaseDir + '"'
+
+$MonitorXml = New-KidTimeTaskXml `
+    -Description 'KidTime foreground activity collector for any logged-on user.' `
+    -Command $Pythonw `
+    -Arguments $MonitorArgs `
+    -Repeat $false
+$WatchdogXml = New-KidTimeTaskXml `
+    -Description 'KidTime watchdog for any logged-on user.' `
+    -Command $Pythonw `
+    -Arguments $WatchdogArgs `
+    -Repeat $true
+
+Register-ScheduledTask -TaskName $MonitorTaskName -Xml $MonitorXml -Force | Out-Null
+Register-ScheduledTask -TaskName $WatchdogTaskName -Xml $WatchdogXml -Force | Out-Null
+'''
+    subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps_script,
+        ],
+        check=True,
+    )
+    print(f"Installed scheduled tasks for all standard users: {TASK_NAME}, {TASK_NAME}Watchdog")
 
 
 def uninstall_startup() -> None:
@@ -284,9 +370,26 @@ def uninstall_startup() -> None:
 
 def is_client_running(current_pid: int) -> bool:
     script_name = Path(__file__).name.lower()
-    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+    current_proc = psutil.Process(current_pid)
+    try:
+        current_username = current_proc.username()
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        current_username = None
+    try:
+        current_session_id = current_proc.terminal()
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        current_session_id = None
+
+    for proc in psutil.process_iter(["pid", "name", "cmdline", "username"]):
         try:
             if proc.info["pid"] == current_pid:
+                continue
+            if current_username and proc.info.get("username") != current_username:
+                continue
+            try:
+                if current_session_id and proc.terminal() != current_session_id:
+                    continue
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
                 continue
             cmdline = [str(part).lower() for part in (proc.info.get("cmdline") or [])]
             if script_name in " ".join(cmdline) and "--ensure-running" not in cmdline:

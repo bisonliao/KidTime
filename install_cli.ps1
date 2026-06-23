@@ -12,6 +12,13 @@ if ($SharedKeyHex.Length -ne 64 -or $SharedKeyHex -notmatch '^[0-9a-fA-F]+$') {
     throw "SharedKeyHex must be a 64-character hex string."
 }
 
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+if (-not $IsAdmin) {
+    throw "Please run this installer from an elevated PowerShell window."
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force -Path ".\kidtimeCli.py" -Destination (Join-Path $InstallDir "kidtimeCli.py")
 Copy-Item -Force -Path ".\requirements-cli.txt" -Destination (Join-Path $InstallDir "requirements-cli.txt")
@@ -39,3 +46,4 @@ python (Join-Path $InstallDir "kidtimeCli.py") --install-startup --base-dir $Ins
 Start-Process -FilePath $PythonwExe -ArgumentList @((Join-Path $InstallDir "kidtimeCli.py"), "--ensure-running", "--base-dir", $InstallDir) -WindowStyle Hidden
 
 Write-Host "KidTime client installed in $InstallDir"
+Write-Host "Scheduled tasks registered for all standard users: KidTimeMonitor, KidTimeMonitorWatchdog"
