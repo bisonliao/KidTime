@@ -131,6 +131,7 @@ chmod +x install_srv.sh install_srv_deb.sh install_srv_ubuntu.sh
 Run PowerShell as Administrator in the project directory:
 
 ```powershell
+Unblock-File .\install_cli.ps1, .\uninstall_cli.ps1
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 .\install_cli.ps1 `
   -ServerUrl "http://8.148.226.47:8001" `
@@ -167,7 +168,7 @@ Useful client commands:
 
 ```powershell
 python C:\ProgramData\KidTime\kidtimeCli.py --ensure-running
-python C:\ProgramData\KidTime\kidtimeCli.py --uninstall-startup
+.\uninstall_cli.ps1
 Get-ScheduledTask -TaskName KidTimeMonitor, KidTimeMonitorWatchdog
 (Get-ScheduledTask -TaskName KidTimeMonitor).Principal
 Get-Content C:\ProgramData\KidTime\kidtimeCli.log -Tail 100 -Wait
