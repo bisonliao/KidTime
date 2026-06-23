@@ -263,7 +263,7 @@ def install_startup(script_path: Path, base_dir: Path) -> None:
         "/TN",
         f"{TASK_NAME}Watchdog",
         "/TR",
-        f'"{sys.executable}" "{script_path}" --ensure-running --base-dir "{base_dir}"',
+        f'"{pythonw}" "{script_path}" --ensure-running --base-dir "{base_dir}"',
         "/SC",
         "MINUTE",
         "/MO",

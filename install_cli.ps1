@@ -19,6 +19,12 @@ Copy-Item -Force -Path ".\requirements-cli.txt" -Destination (Join-Path $Install
 python -m pip install --upgrade pip
 python -m pip install -r (Join-Path $InstallDir "requirements-cli.txt")
 
+$PythonExe = (Get-Command python).Source
+$PythonwExe = Join-Path (Split-Path $PythonExe -Parent) "pythonw.exe"
+if (-not (Test-Path $PythonwExe)) {
+    $PythonwExe = $PythonExe
+}
+
 [Environment]::SetEnvironmentVariable("KIDTIME_SERVER_URL", $ServerUrl, "Machine")
 [Environment]::SetEnvironmentVariable("KIDTIME_CLIENT_ID", $ClientId, "Machine")
 [Environment]::SetEnvironmentVariable("KIDTIME_SHARED_KEY_HEX", $SharedKeyHex.ToLower(), "Machine")
@@ -30,6 +36,6 @@ $env:KIDTIME_SHARED_KEY_HEX = $SharedKeyHex.ToLower()
 $env:KIDTIME_BASE_DIR = $InstallDir
 
 python (Join-Path $InstallDir "kidtimeCli.py") --install-startup --base-dir $InstallDir
-python (Join-Path $InstallDir "kidtimeCli.py") --ensure-running --base-dir $InstallDir
+Start-Process -FilePath $PythonwExe -ArgumentList @((Join-Path $InstallDir "kidtimeCli.py"), "--ensure-running", "--base-dir", $InstallDir) -WindowStyle Hidden
 
 Write-Host "KidTime client installed in $InstallDir"

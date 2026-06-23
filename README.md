@@ -168,6 +168,11 @@ Get-ScheduledTask -TaskName KidTimeMonitor, KidTimeMonitorWatchdog
 Get-Content C:\ProgramData\KidTime\kidtimeCli.log -Tail 100 -Wait
 ```
 
+If a short black console window appears every few minutes, reinstall the client
+tasks with the latest script. Older task definitions may have used `python.exe`
+for the watchdog; the current installer uses `pythonw.exe` for both scheduled
+tasks.
+
 ## Manual run
 
 Server:
