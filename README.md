@@ -1,9 +1,9 @@
 # KidTime
 
-KidTime is a lightweight Windows foreground-process monitor with an Ubuntu upload
-server. The Windows client records one foreground-process event per minute and
-uploads incremental JSON batches. The server verifies an HMAC-SHA256 signature
-before appending rows to one CSV per client/day.
+KidTime is a lightweight Windows foreground-process monitor with an Alibaba
+Cloud Linux upload server. The Windows client records one foreground-process
+event per minute and uploads incremental JSON batches. The server verifies an
+HMAC-SHA256 signature before appending rows to one CSV per client/day.
 
 ## Security model
 
@@ -23,9 +23,9 @@ SSH tunnel.
 ## Files
 
 - `kidtimeCli.py`: Windows 11 client.
-- `kidtimeSrv.py`: Ubuntu 24 upload server.
+- `kidtimeSrv.py`: Alibaba Cloud Linux 3 upload server.
 - `install_cli.ps1`: Windows client installer.
-- `install_srv.sh`: Ubuntu systemd installer.
+- `install_srv.sh`: Alibaba Cloud Linux / RHEL-like systemd installer.
 - `requirements-cli.txt`: client dependencies.
 - `requirements-srv.txt`: server dependencies.
 
@@ -45,9 +45,16 @@ Example format:
 
 Do not keep the placeholder key from the source files in production.
 
-## Install the server on Ubuntu 24
+## Install the server on Alibaba Cloud Linux 3
 
-Copy this project to the Ubuntu server, then run:
+The target server can be Alibaba Cloud Linux 3 / OpenAnolis Edition:
+
+```bash
+cat /etc/os-release
+```
+
+The installer uses `dnf` or `yum`, creates a Python virtual environment, and
+requires Python 3.8 or newer. Copy this project to the server, then run:
 
 ```bash
 export KIDTIME_SHARED_KEY_HEX="replace_with_64_hex_chars"
@@ -83,6 +90,21 @@ Uploaded files are stored as:
 
 Open TCP port `8001` on the server firewall or cloud security group if clients
 connect directly.
+
+On Alibaba Cloud Linux, also check firewalld if it is enabled:
+
+```bash
+sudo firewall-cmd --permanent --add-port=8001/tcp
+sudo firewall-cmd --reload
+```
+
+For Alibaba Cloud ECS, the cloud security group must allow inbound TCP `8001`
+from the monitored Windows machines. If `pip install` is slow or blocked, use a
+PyPI mirror while running the installer:
+
+```bash
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ ./install_srv.sh
+```
 
 ## Install the client on Windows 11
 
@@ -182,7 +204,7 @@ POST
 ```
 
 The server accepts timestamps within 300 seconds by default. Keep Windows and
-Ubuntu clocks synchronized with NTP.
+Alibaba Cloud Linux clocks synchronized with NTP.
 
 ## Notes and limitations
 
