@@ -2,9 +2,10 @@
 """
 KidTime upload server.
 
-Run behind systemd on Ubuntu. The service accepts signed incremental events,
-verifies HMAC-SHA256 authentication, appends rows to one CSV per client/day,
-and exposes health and last-seen information for operations.
+Run behind systemd on Alibaba Cloud Linux or another RHEL-like Linux. The
+service accepts signed incremental events, verifies HMAC-SHA256 authentication,
+appends rows to one CSV per client/day, and exposes health and last-seen
+information for operations.
 """
 
 from __future__ import annotations
