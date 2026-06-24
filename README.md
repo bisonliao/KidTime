@@ -85,6 +85,7 @@ sudo journalctl -u kidtime.service -f
 curl http://127.0.0.1:8001/healthz
 curl -H "X-KidTime-Admin-Token: $(sudo grep KIDTIME_ADMIN_TOKEN /etc/kidtime.env | cut -d= -f2-)" \
   http://127.0.0.1:8001/api/v1/clients
+curl http://127.0.0.1:8001/reports/window-title-summary
 ```
 
 Uploaded files are stored as:
@@ -125,6 +126,34 @@ chmod +x install_srv.sh install_srv_deb.sh install_srv_ubuntu.sh
 ```
 
 `install_srv_ubuntu.sh` is an alias for the same Debian-family installer.
+
+## Update an installed server
+
+On an already installed Alibaba Cloud Linux server, copy the updated project
+files to the server, then run from the project directory:
+
+```bash
+sudo cp kidtimeSrv.py requirements-srv.txt /opt/kidtime/
+sudo /opt/kidtime/.venv/bin/python -m pip install -r /opt/kidtime/requirements-srv.txt
+sudo systemctl restart kidtime.service
+sudo systemctl status kidtime.service --no-pager
+```
+
+Verify the new report page:
+
+```bash
+curl http://127.0.0.1:8001/reports/window-title-summary
+```
+
+From a browser, open:
+
+```text
+http://<server-ip>:8001/reports/window-title-summary
+```
+
+The page summarizes the latest three dates including today by `workstation +
+date + window_title`, sorted by event count descending. This HTML report is
+read-only and does not require an admin token.
 
 ## Install the client on Windows 11
 

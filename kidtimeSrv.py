@@ -14,19 +14,21 @@ import argparse
 import base64
 import csv
 import hashlib
+import html
 import hmac
 import json
 import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 
 # Must match kidtimeCli.py. Prefer overriding with KIDTIME_SHARED_KEY_HEX.
@@ -164,6 +166,15 @@ def client_dir(client_id: str) -> Path:
     return settings["data_dir"] / client_id
 
 
+def require_admin_token(header_token: str | None = None, query_token: str | None = None) -> None:
+    admin_token = settings.get("admin_token")
+    if not admin_token:
+        raise HTTPException(status_code=403, detail="admin token is not configured")
+    supplied_token = header_token or query_token
+    if not supplied_token or not hmac.compare_digest(admin_token, supplied_token):
+        raise HTTPException(status_code=401, detail="bad admin token")
+
+
 CSV_COLUMNS = [
     "event_id",
     "recorded_at",
@@ -260,12 +271,111 @@ def healthz() -> dict[str, Any]:
 
 @app.get("/api/v1/clients")
 def clients(x_kidtime_admin_token: str | None = Header(default=None, alias="X-KidTime-Admin-Token")) -> dict[str, Any]:
-    admin_token = settings.get("admin_token")
-    if not admin_token:
-        raise HTTPException(status_code=403, detail="admin token is not configured")
-    if not x_kidtime_admin_token or not hmac.compare_digest(admin_token, x_kidtime_admin_token):
-        raise HTTPException(status_code=401, detail="bad admin token")
+    require_admin_token(header_token=x_kidtime_admin_token)
     return {"clients": client_state}
+
+
+def recent_report_dates(days: int = 3) -> list[str]:
+    today = datetime.now().date()
+    return [(today - timedelta(days=offset)).strftime("%Y-%m-%d") for offset in range(0, days)]
+
+
+def summarize_window_titles(report_dates: list[str]) -> list[dict[str, Any]]:
+    counts: Counter[tuple[str, str, str]] = Counter()
+    data_dir = settings["data_dir"]
+    if not data_dir.exists():
+        return []
+
+    for client_path in data_dir.iterdir():
+        if not client_path.is_dir():
+            continue
+        client_id = client_path.name
+        for report_date in report_dates:
+            csv_path = client_path / f"{report_date}.csv"
+            if not csv_path.exists():
+                continue
+            try:
+                with csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
+                    reader = csv.DictReader(handle)
+                    for row in reader:
+                        window_title = row.get("window_title") or ""
+                        counts[(client_id, report_date, window_title)] += 1
+            except Exception as exc:
+                logging.warning("failed to summarize %s: %s", csv_path, exc)
+
+    return [
+        {
+            "client_id": client_id,
+            "recorded_date": recorded_date,
+            "window_title": window_title,
+            "count": count,
+        }
+        for (client_id, recorded_date, window_title), count in counts.most_common()
+    ]
+
+
+def render_summary_html(rows: list[dict[str, Any]], report_dates: list[str]) -> str:
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    date_text = ", ".join(report_dates)
+    body_rows = []
+    for row in rows:
+        body_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(row['client_id']))}</td>"
+            f"<td>{html.escape(str(row['recorded_date']))}</td>"
+            f"<td>{html.escape(str(row['window_title']))}</td>"
+            f"<td class=\"count\">{row['count']}</td>"
+            "</tr>"
+        )
+    table_body = "\n".join(body_rows) or '<tr><td colspan="4" class="empty">No records found.</td></tr>'
+    total_events = sum(int(row["count"]) for row in rows)
+
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KidTime Window Title Summary</title>
+  <style>
+    body {{ margin: 0; font-family: Arial, "Microsoft YaHei", sans-serif; color: #1f2937; background: #f6f8fb; }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 28px 20px 40px; }}
+    h1 {{ margin: 0 0 8px; font-size: 24px; }}
+    .meta {{ margin: 0 0 18px; color: #526070; font-size: 14px; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d8dee8; }}
+    th, td {{ padding: 10px 12px; border-bottom: 1px solid #e5e9f0; text-align: left; vertical-align: top; }}
+    th {{ position: sticky; top: 0; background: #edf2f7; font-size: 13px; color: #334155; }}
+    td {{ font-size: 13px; }}
+    .count {{ text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }}
+    .empty {{ text-align: center; color: #6b7280; padding: 28px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>KidTime Window Title Summary</h1>
+    <p class="meta">Dates: {html.escape(date_text)} | Rows: {len(rows)} | Events: {total_events} | Generated: {html.escape(generated_at)}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Workstation</th>
+          <th>Date</th>
+          <th>Window Title</th>
+          <th class="count">Events</th>
+        </tr>
+      </thead>
+      <tbody>
+        {table_body}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>"""
+
+
+@app.get("/reports/window-title-summary", response_class=HTMLResponse)
+def window_title_summary() -> HTMLResponse:
+    report_dates = recent_report_dates(days=3)
+    rows = summarize_window_titles(report_dates)
+    return HTMLResponse(render_summary_html(rows, report_dates))
 
 
 @app.post("/api/v1/events")
